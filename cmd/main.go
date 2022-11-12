@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/elireisman/internal/data"
+	"github.com/elireisman/cass-dsapi/internal/data"
 
 	"github.com/gocql/gocql"
 )
