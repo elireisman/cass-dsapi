@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
+
+	"github.com/gocql/gocql"
 )
 
 func CreateTables(ctx context.Context, lgr *log.Logger, client gocql.Session) error {
 	for _, table := range tables {
 		lgr.Printf("Creating:\n%s\n\n", table)
-		if err := client.QueryWithContext(ctx, table).Exec(); err != nil {
+		if err := client.Query(table).Exec(); err != nil {
 			return err
 		}
 	}
@@ -18,28 +19,34 @@ func CreateTables(ctx context.Context, lgr *log.Logger, client gocql.Session) er
 }
 
 // TODO: MAKE THIS BENCHMARK FRIENDLY!
-func Load(ctx context.Context, lgr *log.Logger, client gocql.Session, snapshot snapshotMeta) error {
+func Load(ctx context.Context, lgr *log.Logger, client gocql.Session, snapshot Snapshot) error {
 	return nil
 }
 
-func writeDependency(ctx context.Context, lgr *log.Logger, client gocql.Session, sm snapshotMeta, mm manifestMeta, dep packageMeta) error {
+// TODO
+func writeManifest(ctx context.Context, lgr *log.Logger, client gocql.Session, sm Snapshot, mm Manifest) error {
+	return nil
+}
+
+// TODO: use batches of INSERTs instead? use UPDATE instead?
+func writeDependency(ctx context.Context, lgr *log.Logger, client gocql.Session, sm Snapshot, mm Manifest, dep Dependency) error {
 	// manifest_dependencies query
 	query := fmt.Sprintf(`INSERT INTO %s.manifest_dependencies
 	  (manifest_id, package_manager, namespace, name, version, snapshot_id, license, source_url, scope, relationship, runtime, development)
 	  VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err := client.Query(query).Bind(
-		mm.manifestID,
-		mm.packageManager,
-		dep.namespace,
-		dep.name,
-		dep.version,
-		sn.snapshotID,
-		dep.license,
-		dep.sourceURL,
-		dep.scope,
-		dep.relationship,
-		dep.runtime,
-		dep.development).Exec(); err != nil {
+		mm.ID,
+		mm.PackageManager,
+		dep.Namespace,
+		dep.Name,
+		dep.Version,
+		sm.ID,
+		dep.License,
+		dep.SourceURL,
+		dep.Scope,
+		dep.Relationship,
+		dep.Runtime,
+		dep.Development).Exec(); err != nil {
 		return err
 	}
 
