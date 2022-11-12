@@ -9,10 +9,7 @@ import (
 	"math/rand"
 )
 
-var (
-	dictionary []string
-	packages   []packageMeta
-)
+var dictionary []string
 
 func init() {
 	words, err := os.ReadFile("/usr/share/dict/words")

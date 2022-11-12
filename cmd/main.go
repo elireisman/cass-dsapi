@@ -11,8 +11,7 @@ import (
 )
 
 const (
-	numSnapshots    = 1
-	maxManifests    = 50
+	maxManifests    = 20
 	maxDependencies = 200
 )
 
@@ -30,13 +29,21 @@ func main() {
 	err = data.CreateTables(ctx, lgr, sesh)
 	check(err, "creating tables")
 
+	var snap []Snapshot
+
 	start := time.Now()
 	for i := 0; i < numSnapshots; i++ {
-		err = data.GenerateSnapshot(ctx, lgr, sesh, numManifests, maxDependencies)
-		check(err)
+		snap, err := data.GenerateSnapshot(ctx, lgr, maxManifests, maxDependencies)
+		check(err, "generating snapshot")
 	}
 	dur := time.Since(start)
-	log.Printf("%d snapshots generated in %s", numSnapshots, dur)
+	lgr.Printf("Snapshot generated in %s", dur)
+
+	start = time.Now()
+	err = data.Load(ctx, lgr, sesh, snap)
+	check(err, "ingesting snapshot into Cassandra")
+	dur = time.Since(start)
+	lgr.Printf("Ingested snapshot into Cassandra in %s", dur)
 }
 
 func check(err error, msg string) {
