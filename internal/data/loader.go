@@ -8,10 +8,22 @@ import (
 	"github.com/gocql/gocql"
 )
 
-func CreateTables(ctx context.Context, lgr *log.Logger, client gocql.Session) error {
+func CreateKeyspace(ctx context.Context, lgr *log.Logger, client gocql.Session, keyspace string) error {
+	lgr.Printf("Creating keyspace...")
+	q := fmt.Sprintf(`
+	  CREATE KEYSPACE %s
+	  WITH replication = {
+	      'class' : 'SimpleStrategy',
+	      'replication_factor' : 1
+	  }`, keyspace)
+	return client.Query(q).Exec()
+}
+
+func CreateTables(ctx context.Context, lgr *log.Logger, client gocql.Session, keyspace string) error {
 	for _, table := range tables {
-		lgr.Printf("Creating:\n%s\n\n", table)
-		if err := client.Query(table).Exec(); err != nil {
+		q := fmt.Sprintf(table, keyspace)
+		lgr.Printf("Creating table:\n%s\n\n", q)
+		if err := client.Query(q).Exec(); err != nil {
 			return err
 		}
 	}
@@ -58,7 +70,7 @@ func writeDependency(ctx context.Context, lgr *log.Logger, client gocql.Session,
 
 var tables = []string{
 	`
-CREATE TABLE snapshots (
+CREATE TABLE %s.snapshots (
 	// unique ID for the record
 	id   uuid,
 
@@ -84,7 +96,7 @@ CREATE TABLE snapshots (
 `,
 
 	`
-CREATE TABLE manifests (
+CREATE TABLE %s.manifests (
 	// unique ID for the record
 	id   uuid,
 
@@ -121,7 +133,7 @@ CREATE TABLE manifests (
 `,
 
 	`
-CREATE TABLE manifest_dependencies (
+CREATE TABLE %s.manifest_dependencies (
       // parent snapshot, manifest IDs
       snapshot_id uuid,
       manifest_id uuid,
@@ -149,7 +161,7 @@ CREATE TABLE manifest_dependencies (
 `,
 
 	`
-CREATE TABLE dependent_repositories (
+CREATE TABLE %s.dependent_repositories (
       // unique ID for record
       id   int,
 
@@ -173,7 +185,7 @@ CREATE TABLE dependent_repositories (
 `,
 
 	`
-CREATE TABLE dependent_repository_counts (
+CREATE TABLE %s.dependent_repository_counts (
       // decomposed package PURL fields
       package_manager text,
       namespace text,
