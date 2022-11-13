@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/elireisman/cass-dsapi/internal/data"
-	"github.com/gocql/gocql"
 )
 
 var (
@@ -43,20 +42,13 @@ func main() {
 	dur := time.Since(start)
 	lgr.Printf("Generated %d snapshots in %s", len(snapshots), dur)
 
-	cfg := gocql.NewCluster("127.0.0.1")
-	//cfg.Keyspace = "eli_demo"
-	cfg.Logger = lgr
-	cfg.ProtoVersion = 3
-	cfg.ConnectTimeout = 2 * time.Second
-	cfg.Timeout = 10 * time.Second
-
-	sesh, err := cfg.CreateSession()
+	sesh, err := data.CreateClient(ctx, lgr)
 	check(err, "creating gocql.Session")
 
-	err = data.CreateKeyspace(ctx, lgr, *sesh, keyspaceName)
+	err = data.CreateKeyspace(ctx, lgr, sesh, keyspaceName)
 	check(err, "creating keyspace")
 
-	err = data.CreateTables(ctx, lgr, *sesh, keyspaceName)
+	err = data.CreateTables(ctx, lgr, sesh, keyspaceName)
 	check(err, "creating tables")
 
 	start = time.Now()
@@ -65,7 +57,7 @@ func main() {
 			jsn, _ := json.MarshalIndent(&snap, "", "\t")
 			fmt.Printf("\n%s\n", string(jsn))
 		}
-		err = data.Load(ctx, lgr, *sesh, snap)
+		err = data.Load(ctx, lgr, sesh, snap, keyspaceName)
 		check(err, "ingesting snapshot into Cassandra")
 	}
 	dur = time.Since(start)

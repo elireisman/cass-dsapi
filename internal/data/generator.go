@@ -15,12 +15,14 @@ import (
 	"github.com/gocql/gocql"
 )
 
+// words list cache to build various generated data from
 var dictionary []string
 
-// TODO: parameterize this + use distribution for more realism
+// TODO: parameterize this functionality for more realism
 const (
-	runtimeCount     = 20
-	developmentCount = 10
+	// max transitives to apply to each Dependency's requires list
+	runTxMax = 20
+	devTxMax = 10
 )
 
 func init() {
@@ -39,6 +41,7 @@ type Snapshot struct {
 	RepositoryNWO string
 	CommitSHA     string
 	Ref           string
+	SourceURL     string
 	BlobURL       string
 	CreatedAt     time.Time
 	Manifests     []Manifest
@@ -48,6 +51,7 @@ type Manifest struct {
 	ID             gocql.UUID
 	PackageManager string
 	FilePath       string
+	BlobKey        string
 	ProjectName    string
 	ProjectVersion string
 	ProjectLicense string
@@ -90,14 +94,15 @@ func GenerateSnapshot(ctx context.Context, lgr *log.Logger, manifestCount, maxDe
 
 	sm := Snapshot{
 		ID:            snapID,
+		OwnerID:       uint(r.Uint32()),
 		RepositoryID:  uint(r.Uint32()),
 		RepositoryNWO: generateNWO(r),
-		OwnerID:       uint(r.Uint32()),
+		SourceURL:     generateGitHubURL(r),
+		BlobURL:       "https://foobar.azure.example.com",
 		CommitSHA:     generateCommitSHA(r),
 		Ref:           "refs/heads/main",
 		CreatedAt:     time.Now(),
 	}
-	sm.BlobURL = fmt.Sprintf("https://foobar.azure.net/%d/%d/%s", sm.OwnerID, sm.RepositoryID, sm.ID)
 	lgr.Printf("Creating Snapshot %s: %+v", sm.ID, sm)
 
 	for i := 0; i < manifestCount; i++ {
@@ -136,6 +141,7 @@ func generateManifest(ctx context.Context, lgr *log.Logger, r *rand.Rand, sm Sna
 		ID:             mfstID,
 		PackageManager: pkgMgr,
 		FilePath:       generateFilepath(r, pkgMgr),
+		BlobKey:        fmt.Sprintf("/%d/%d/%s/%s", sm.OwnerID, sm.RepositoryID, sm.ID, mfstID),
 		ProjectName:    getWord(r),
 		ProjectVersion: generateSemver(r),
 		ProjectLicense: generateLicense(r),
@@ -186,8 +192,8 @@ func selectManifestDependencies(r *rand.Rand, pool []Dependency, sm Snapshot, mm
 		resolvedPkg := selectWithoutReplacement(r, selectedDeps)
 		resolvedPkg.Scope = "runtime"
 		resolvedPkg.Relationship = "direct"
-		resolvedPkg.Runtime = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%runtimeCount))
-		resolvedPkg.Development = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%developmentCount))
+		resolvedPkg.Runtime = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%runTxMax))
+		resolvedPkg.Development = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%devTxMax))
 		runtimes = append(runtimes, resolvedPkg)
 	}
 
@@ -197,8 +203,8 @@ func selectManifestDependencies(r *rand.Rand, pool []Dependency, sm Snapshot, mm
 		resolvedPkg := selectWithoutReplacement(r, selectedDeps)
 		resolvedPkg.Scope = "development"
 		resolvedPkg.Relationship = "direct"
-		resolvedPkg.Runtime = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%runtimeCount))
-		resolvedPkg.Development = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%developmentCount))
+		resolvedPkg.Runtime = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%runTxMax))
+		resolvedPkg.Development = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%devTxMax))
 		developments = append(developments, resolvedPkg)
 	}
 
@@ -207,8 +213,8 @@ func selectManifestDependencies(r *rand.Rand, pool []Dependency, sm Snapshot, mm
 	for _, resolvedPkg := range selectedDeps {
 		resolvedPkg.Scope = generateScope(r)
 		resolvedPkg.Relationship = "indirect"
-		resolvedPkg.Runtime = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%runtimeCount))
-		resolvedPkg.Development = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%developmentCount))
+		resolvedPkg.Runtime = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%runTxMax))
+		resolvedPkg.Development = selectPURLs(r, mm.PackageManager, manifestDeps, int(r.Uint32()%devTxMax))
 		transitives = append(transitives, resolvedPkg)
 	}
 
