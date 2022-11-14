@@ -18,8 +18,6 @@ var (
 	maxDependencies int
 )
 
-const keyspaceName = "eli_demo"
-
 func init() {
 	flag.BoolVar(&verbose, "v", false, "verbose logging")
 	flag.IntVar(&numSnapshots, "s", 1, "number of snapshots to generate and write to Cassandra")
@@ -45,10 +43,10 @@ func main() {
 	sesh, err := data.CreateClient(ctx, lgr)
 	check(err, "creating gocql.Session")
 
-	err = data.CreateKeyspace(ctx, lgr, sesh, keyspaceName)
+	err = data.CreateKeyspace(ctx, lgr, sesh, data.Keyspace)
 	check(err, "creating keyspace")
 
-	err = data.CreateTables(ctx, lgr, sesh, keyspaceName)
+	err = data.CreateTables(ctx, lgr, sesh, data.Keyspace)
 	check(err, "creating tables")
 
 	start = time.Now()
@@ -57,7 +55,7 @@ func main() {
 			jsn, _ := json.MarshalIndent(&snap, "", "\t")
 			fmt.Printf("\n%s\n", string(jsn))
 		}
-		err = data.Load(ctx, lgr, sesh, snap, keyspaceName)
+		err = data.Load(ctx, lgr, sesh, snap, data.Keyspace)
 		check(err, "ingesting snapshot into Cassandra")
 	}
 	dur = time.Since(start)

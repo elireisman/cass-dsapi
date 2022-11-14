@@ -25,7 +25,7 @@ test:
 
 .PHONY: bench
 bench:
-	@go test ./...
+	@go test -bench=. -benchtime=10s internal/benchmarks/*
 
 .PHONY: run
 run:
