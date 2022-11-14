@@ -78,7 +78,8 @@ func init() {
 		panic(err.Error())
 	}
 
-	q := fmt.Sprintf(`SELECT id, owner_id, repository_id, nwo, source_url, ref, commit_oid, created_at, blob_url FROM %s.snapshots LIMIT 1000`, data.Keyspace)
+	q := fmt.Sprintf(`SELECT id, owner_id, repository_id, nwo, source_url, ref, commit_oid, created_at, blob_url
+	  FROM %s.snapshots LIMIT 1000`, data.Keyspace)
 	scanner := client.Query(q).Iter().Scanner()
 	for scanner.Next() {
 		snapshot := Snapshot{}
