@@ -9,7 +9,7 @@ import (
 	"github.com/gocql/gocql"
 )
 
-const batchSize = 100
+const batchSize = 250
 
 func CreateClient(ctx context.Context, lgr *log.Logger) (*gocql.Session, error) {
 	cfg := gocql.NewCluster("127.0.0.1")
