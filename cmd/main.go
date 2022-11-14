@@ -13,6 +13,7 @@ import (
 
 var (
 	verbose         bool
+	canonical       bool
 	numSnapshots    int
 	numManifests    int
 	maxDependencies int
@@ -20,6 +21,7 @@ var (
 
 func init() {
 	flag.BoolVar(&verbose, "v", false, "verbose logging")
+	flag.BoolVar(&canonical, "c", false, "generate series of related snapshots (generate a canonical + historicals)")
 	flag.IntVar(&numSnapshots, "s", 1, "number of snapshots to generate and write to Cassandra")
 	flag.IntVar(&numManifests, "m", 20, "number of manifests to generate per snapshot")
 	flag.IntVar(&maxDependencies, "d", 200, "max number of dependencies per manifest to generate")
@@ -33,8 +35,15 @@ func main() {
 	var snapshots []data.Snapshot
 	start := time.Now()
 	for i := 0; i < numSnapshots; i++ {
-		snap, err := data.GenerateSnapshot(ctx, lgr, numManifests, maxDependencies)
-		check(err, "generating snapshots")
+		var snap data.Snapshot
+		var err error
+		if canonical && i > 0 {
+			snap, err = data.GenerateSnapshot(ctx, lgr, &snapshots[0], numManifests, maxDependencies)
+			check(err, "generating canonical snapshot series")
+		} else {
+			snap, err = data.GenerateSnapshot(ctx, lgr, nil, numManifests, maxDependencies)
+			check(err, "generating unique snapshots")
+		}
 		snapshots = append(snapshots, snap)
 	}
 	dur := time.Since(start)

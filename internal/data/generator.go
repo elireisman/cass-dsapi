@@ -83,27 +83,36 @@ func (pm Dependency) ToPURL(pkgMgr string) string {
 	return fmt.Sprintf("%s:%s/%s@%s", pkgMgr, ns, name, pm.Version)
 }
 
-func GenerateSnapshot(ctx context.Context, lgr *log.Logger, manifestCount, maxDepsPer int) (Snapshot, error) {
+func GenerateSnapshot(ctx context.Context, lgr *log.Logger, canonical *Snapshot, manifestCount, maxDepsPer int) (Snapshot, error) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	pool := generatePackagePool(r, 10000)
 
-	snapID, err := gocql.RandomUUID()
-	if err != nil {
-		return Snapshot{}, err
-	}
+	var snapshot Snapshot
+	if canonical == nil {
+		snapID, err := gocql.RandomUUID()
+		if err != nil {
+			return Snapshot{}, err
+		}
 
-	sm := Snapshot{
-		ID:            snapID,
-		OwnerID:       uint(r.Uint32()),
-		RepositoryID:  uint(r.Uint32()),
-		RepositoryNWO: generateNWO(r),
-		SourceURL:     generateGitHubURL(r),
-		BlobURL:       "https://foobar.azure.example.com",
-		CommitSHA:     generateCommitSHA(r),
-		Ref:           "refs/heads/main",
-		CreatedAt:     time.Now(),
+		snapshot = Snapshot{
+			ID:            snapID,
+			OwnerID:       uint(r.Uint32()),
+			RepositoryID:  uint(r.Uint32()),
+			RepositoryNWO: generateNWO(r),
+			SourceURL:     generateGitHubURL(r),
+			BlobURL:       "https://foobar.azure.example.com",
+			CommitSHA:     generateCommitSHA(r),
+			Ref:           "refs/heads/main",
+			CreatedAt:     time.Now(),
+		}
+		lgr.Printf("Creating Snapshot %s: %+v", snapshot.ID, snapshot)
+	} else {
+		snapshot = *canonical
+		snapshot.CommitSHA = generateCommitSHA(r)
+		snapshot.CreatedAt = time.Now()
+		snapshot.Manifests = nil
+		lgr.Printf("Creating Snapshot from canonical base %s: %+v", snapshot.ID, snapshot)
 	}
-	lgr.Printf("Creating Snapshot %s: %+v", sm.ID, sm)
 
 	for i := 0; i < manifestCount; i++ {
 		depsCount := int(r.Uint32() % uint32(maxDepsPer))
@@ -116,15 +125,15 @@ func GenerateSnapshot(ctx context.Context, lgr *log.Logger, manifestCount, maxDe
 			devCount = directsCount - split
 		}
 
-		manifest, err := generateManifest(ctx, lgr, r, sm, runtimeCount, devCount, transitivesCount, pool)
+		manifest, err := generateManifest(ctx, lgr, r, snapshot, runtimeCount, devCount, transitivesCount, pool)
 		if err != nil {
-			return sm, err
+			return snapshot, err
 		}
 
-		sm.Manifests = append(sm.Manifests, manifest)
+		snapshot.Manifests = append(snapshot.Manifests, manifest)
 	}
 
-	return sm, nil
+	return snapshot, nil
 }
 
 func generateManifest(ctx context.Context, lgr *log.Logger, r *rand.Rand, sm Snapshot,
