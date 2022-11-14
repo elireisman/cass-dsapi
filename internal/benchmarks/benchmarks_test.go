@@ -99,7 +99,7 @@ func init() {
 	}
 
 	q = fmt.Sprintf(`SELECT id, snapshot_id, owner_id, repository_id, ref, commit_oid, blob_key, manifest_key,
-	  package_manager, project_name, project_version, project_license FROM %s.manifests LIMIT 1000`, data.Keyspace)
+	  package_manager, project_name, project_version, project_license FROM %s.manifests LIMIT 5000`, data.Keyspace)
 	scanner = client.Query(q).Iter().Scanner()
 	for scanner.Next() {
 		manifest := Manifest{}
@@ -123,7 +123,7 @@ func init() {
 
 	q = fmt.Sprintf(`SELECT snapshot_id, manifest_id, package_manager, namespace, name,
 	  version, license, source_url, scope, relationship, runtime, development
-	  FROM %s.manifest_dependencies LIMIT 1000`, data.Keyspace)
+	  FROM %s.manifest_dependencies LIMIT 5000`, data.Keyspace)
 	scanner = client.Query(q).Iter().Scanner()
 	for scanner.Next() {
 		dependency := Dependency{}
