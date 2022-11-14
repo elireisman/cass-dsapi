@@ -11,7 +11,15 @@ cassandra:
 	@if ! docker info >/dev/null 2>&1; then echo "ERROR: Docker must be running locally"; exit 1; fi
 	docker pull $(CASSANDRA_IMG)
 	docker run -d --rm -p 9042:9042 $(CASSANDRA_IMG)
-	@N=10; while [ "$$N" -ne "0" ]; do echo "waiting... $$N"; N=$$((N - 1)) ; sleep 1; done
+	@N=15; while [ "$$N" -ne "0" ]; do echo "Cassandra warming up... $$N"; N=$$((N - 1)) ; sleep 1; done
+
+.PHONY: down
+down:
+	@docker rm -f $(shell docker ps | awk '/cassandra/{print $$1}')
+
+.PHONY: cqlsh
+cqlsh:
+	@docker exec -it $(shell docker ps | awk '/cassandra/{print $$1}') cqlsh
 
 .PHONY: build
 build:
@@ -21,11 +29,11 @@ build:
 
 .PHONY: test
 test:
-	@#go test ./...
+	@go test ./...
 
 .PHONY: bench
 bench:
-	@go test -bench=. -benchtime=10s internal/benchmarks/*
+	@go test -bench=. -benchtime=5s internal/benchmarks/*
 
 .PHONY: run
 run:
