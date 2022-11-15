@@ -10,7 +10,7 @@ all: build test run
 cassandra:
 	@if ! docker info >/dev/null 2>&1; then echo "ERROR: Docker must be running locally"; exit 1; fi
 	docker pull $(CASSANDRA_IMG)
-	docker run -d --rm -p 9042:9042 $(CASSANDRA_IMG)
+	docker run -d -p 9042:9042 $(CASSANDRA_IMG)
 	@N=15; while [ "$$N" -ne "0" ]; do echo "Cassandra warming up... $$N"; N=$$((N - 1)) ; sleep 1; done
 
 .PHONY: down
