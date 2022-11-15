@@ -98,51 +98,64 @@ func init() {
 		snapshots = append(snapshots, snapshot)
 	}
 
-	q = fmt.Sprintf(`SELECT id, snapshot_id, owner_id, repository_id, ref, commit_oid, blob_key, manifest_key,
-	  package_manager, project_name, project_version, project_license FROM %s.manifests LIMIT 5000`, data.Keyspace)
-	scanner = client.Query(q).Iter().Scanner()
-	for scanner.Next() {
-		manifest := Manifest{}
-		if err := scanner.Scan(
-			&manifest.ID,
-			&manifest.SnapshotID,
-			&manifest.OwnerID,
-			&manifest.RepositoryID,
-			&manifest.Ref,
-			&manifest.CommitOID,
-			&manifest.BlobKey,
-			&manifest.ManifestKey,
-			&manifest.PackageManager,
-			&manifest.ProjectName,
-			&manifest.ProjectVersion,
-			&manifest.ProjectLicense); err != nil {
-			panic("obtaining manifest seed list: " + err.Error())
+	for len(manifests) < 5000 {
+		selection := int(r.Uint32() % uint32(len(snapshots)))
+		randoRepoID := snapshots[selection].RepositoryID
+
+		q = fmt.Sprintf(`SELECT id, snapshot_id, owner_id, repository_id, ref, commit_oid, blob_key, manifest_key,
+		  package_manager, project_name, project_version, project_license
+		  FROM %s.manifests WHERE repository_id = ? LIMIT 100 ALLOW FILTERING`, data.Keyspace)
+
+		scanner = client.Query(q).Bind(randoRepoID).Iter().Scanner()
+		for scanner.Next() {
+			manifest := Manifest{}
+			if err := scanner.Scan(
+				&manifest.ID,
+				&manifest.SnapshotID,
+				&manifest.OwnerID,
+				&manifest.RepositoryID,
+				&manifest.Ref,
+				&manifest.CommitOID,
+				&manifest.BlobKey,
+				&manifest.ManifestKey,
+				&manifest.PackageManager,
+				&manifest.ProjectName,
+				&manifest.ProjectVersion,
+				&manifest.ProjectLicense); err != nil {
+				panic("obtaining manifest seed list: " + err.Error())
+			}
+			manifests = append(manifests, manifest)
 		}
-		manifests = append(manifests, manifest)
 	}
 
-	q = fmt.Sprintf(`SELECT snapshot_id, manifest_id, package_manager, namespace, name,
-	  version, license, source_url, scope, relationship, runtime, development
-	  FROM %s.manifest_dependencies LIMIT 5000`, data.Keyspace)
-	scanner = client.Query(q).Iter().Scanner()
-	for scanner.Next() {
-		dependency := Dependency{}
-		if err := scanner.Scan(
-			&dependency.SnapshotID,
-			&dependency.ManifestID,
-			&dependency.PackageManager,
-			&dependency.Namespace,
-			&dependency.Name,
-			&dependency.Version,
-			&dependency.License,
-			&dependency.SourceURL,
-			&dependency.Scope,
-			&dependency.Relationship,
-			&dependency.Runtime,
-			&dependency.Development); err != nil {
-			panic("obtaining dependency seed list: " + err.Error())
+	for len(dependencies) < 5000 {
+		selection := int(r.Uint32() % uint32(len(manifests)))
+		randoManifestID := manifests[selection].ID
+
+		q = fmt.Sprintf(`SELECT snapshot_id, manifest_id, package_manager, namespace, name,
+		  version, license, source_url, scope, relationship, runtime, development
+		  FROM %s.manifest_dependencies WHERE manifest_id = ? LIMIT 100 ALLOW FILTERING`, data.Keyspace)
+
+		scanner = client.Query(q).Bind(randoManifestID).Iter().Scanner()
+		for scanner.Next() {
+			dependency := Dependency{}
+			if err := scanner.Scan(
+				&dependency.SnapshotID,
+				&dependency.ManifestID,
+				&dependency.PackageManager,
+				&dependency.Namespace,
+				&dependency.Name,
+				&dependency.Version,
+				&dependency.License,
+				&dependency.SourceURL,
+				&dependency.Scope,
+				&dependency.Relationship,
+				&dependency.Runtime,
+				&dependency.Development); err != nil {
+				panic("obtaining dependency seed list: " + err.Error())
+			}
+			dependencies = append(dependencies, dependency)
 		}
-		dependencies = append(dependencies, dependency)
 	}
 }
 
