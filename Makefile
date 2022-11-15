@@ -29,7 +29,7 @@ build:
 
 .PHONY: test
 test:
-	@#go test ./...
+	@go test -test.run Test ./...
 
 .PHONY: bench
 bench:
