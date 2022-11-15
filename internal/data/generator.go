@@ -87,13 +87,13 @@ func GenerateSnapshot(ctx context.Context, lgr *log.Logger, canonical *Snapshot,
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	pool := generatePackagePool(r, 10000)
 
-	var snapshot Snapshot
-	if canonical == nil {
-		snapID, err := gocql.RandomUUID()
-		if err != nil {
-			return Snapshot{}, err
-		}
+	snapID, err := gocql.RandomUUID()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	snapshot := Snapshot{ID: snapID}
 
+	if canonical == nil {
 		snapshot = Snapshot{
 			ID:            snapID,
 			OwnerID:       uint(r.Uint32()),
@@ -108,6 +108,7 @@ func GenerateSnapshot(ctx context.Context, lgr *log.Logger, canonical *Snapshot,
 		lgr.Printf("Creating Snapshot %s: %+v", snapshot.ID, snapshot)
 	} else {
 		snapshot = *canonical
+		snapshot.ID = snapID
 		snapshot.CommitSHA = generateCommitSHA(r)
 		snapshot.CreatedAt = time.Now()
 		snapshot.Manifests = nil
