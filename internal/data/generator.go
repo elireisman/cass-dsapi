@@ -3,7 +3,7 @@ package data
 import (
 	"context"
 	"crypto/sha1"
-	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"math/rand"
@@ -151,7 +151,7 @@ func generateManifest(ctx context.Context, lgr *log.Logger, r *rand.Rand, sm Sna
 		ID:             mfstID,
 		PackageManager: pkgMgr,
 		FilePath:       generateFilepath(r, pkgMgr),
-		BlobKey:        fmt.Sprintf("/%d/%d/%s/%s", sm.OwnerID, sm.RepositoryID, sm.ID, mfstID),
+		BlobKey:        fmt.Sprintf("/%d/%s/%s", sm.RepositoryID, sm.ID, mfstID),
 		ProjectName:    getWord(r),
 		ProjectVersion: generateSemver(r),
 		ProjectLicense: generateLicense(r),
@@ -282,7 +282,7 @@ func generateCommitSHA(r *rand.Rand) string {
 	slug := getWord(r) + getWord(r)
 	hasher := sha1.New()
 	hasher.Write([]byte(slug))
-	return base64.URLEncoding.EncodeToString(hasher.Sum(nil))
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 func generateFilepath(r *rand.Rand, pm string) string {
