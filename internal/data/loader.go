@@ -58,7 +58,7 @@ func Load(ctx context.Context, lgr *log.Logger, client *gocql.Session, snapshot 
 			return fmt.Errorf("writing manifest %s: %s", manifest.ID, err)
 		}
 		lgr.Printf("\tManifest %s written", manifest.ID)
-		total, err := batchDependencies(ctx, lgr, client, keyspace, snapshot, manifest)
+		total, err := writeDependencies(ctx, lgr, client, keyspace, snapshot, manifest)
 		if err != nil {
 			return fmt.Errorf("writing dependency batches for manifest %s: %s", manifest.ID, err)
 		}
@@ -68,14 +68,10 @@ func Load(ctx context.Context, lgr *log.Logger, client *gocql.Session, snapshot 
 	return nil
 }
 
-func batchDependencies(ctx context.Context, lgr *log.Logger, client *gocql.Session, keyspace string, snapshot Snapshot, manifest Manifest) (uint, error) {
-	mdeps := client.NewBatch(gocql.UnloggedBatch).WithContext(ctx)
-	rdeps := client.NewBatch(gocql.UnloggedBatch).WithContext(ctx)
-	dcounts := client.NewBatch(gocql.CounterBatch).WithContext(ctx)
-
+func writeDependencies(ctx context.Context, lgr *log.Logger, client *gocql.Session, keyspace string, snapshot Snapshot, manifest Manifest) (uint, error) {
 	rtProcessed := 0
 	for _, dependency := range manifest.Runtime {
-		if err := addDependency(ctx, client, &mdeps, &rdeps, &dcounts, keyspace, snapshot, manifest, dependency); err != nil {
+		if err := writeDependency(ctx, client, keyspace, snapshot, manifest, dependency); err != nil {
 			return 0, err
 		}
 		rtProcessed++
@@ -84,7 +80,7 @@ func batchDependencies(ctx context.Context, lgr *log.Logger, client *gocql.Sessi
 
 	devProcessed := 0
 	for _, dependency := range manifest.Development {
-		if err := addDependency(ctx, client, &mdeps, &rdeps, &dcounts, keyspace, snapshot, manifest, dependency); err != nil {
+		if err := writeDependency(ctx, client, keyspace, snapshot, manifest, dependency); err != nil {
 			return 0, err
 		}
 		devProcessed++
@@ -93,19 +89,13 @@ func batchDependencies(ctx context.Context, lgr *log.Logger, client *gocql.Sessi
 
 	trProcessed := 0
 	for _, dependency := range manifest.Transitives {
-		if err := addDependency(ctx, client, &mdeps, &rdeps, &dcounts, keyspace, snapshot, manifest, dependency); err != nil {
+		if err := writeDependency(ctx, client, keyspace, snapshot, manifest, dependency); err != nil {
 			return 0, err
 		}
 		trProcessed++
 	}
 	lgr.Printf("\t\t%d transitive dependencies submitted", trProcessed)
 
-	// final flush
-	for _, batch := range []*gocql.Batch{mdeps, rdeps, dcounts} {
-		if err := client.ExecuteBatch(batch); err != nil {
-			return 0, fmt.Errorf("performing final dependencies batch flush: %s", err)
-		}
-	}
 	return uint(rtProcessed + devProcessed + trProcessed), nil
 }
 
@@ -147,81 +137,50 @@ func writeManifest(ctx context.Context, lgr *log.Logger, client *gocql.Session, 
 		mm.ProjectLicense).Exec()
 }
 
-func addDependency(ctx context.Context, client *gocql.Session, mdeps, drepos, dcounts **gocql.Batch,
-	keyspace string, sm Snapshot, mm Manifest, dep Dependency) error {
-
+func writeDependency(ctx context.Context, client *gocql.Session, keyspace string, sm Snapshot, mm Manifest, dep Dependency) error {
 	mdQuery := fmt.Sprintf(`INSERT INTO %s.manifest_dependencies
-	  (manifest_id, package_manager, namespace, name, version, snapshot_id, license, source_url, scope, relationship, runtime, development)
+	  (manifest_id, package_manager, namespace, name, version, snapshot_id,
+	   license, source_url, scope, relationship, runtime, development)
 	  VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, keyspace)
-
-	(*mdeps).Entries = append((*mdeps).Entries, gocql.BatchEntry{
-		Stmt: mdQuery,
-		Args: []interface{}{
-			mm.ID,
-			mm.PackageManager,
-			dep.Namespace,
-			dep.Name,
-			dep.Version,
-			sm.ID,
-			dep.License,
-			dep.SourceURL,
-			dep.Scope,
-			dep.Relationship,
-			dep.Runtime,
-			dep.Development},
-		Idempotent: false,
-	})
+	if err := client.Query(mdQuery).Bind(
+		mm.ID,
+		mm.PackageManager,
+		dep.Namespace,
+		dep.Name,
+		dep.Version,
+		sm.ID,
+		dep.License,
+		dep.SourceURL,
+		dep.Scope,
+		dep.Relationship,
+		dep.Runtime,
+		dep.Development).Exec(); err != nil {
+		return fmt.Errorf("writing to manifest_dependencies: %s", err)
+	}
 
 	drQuery := fmt.Sprintf(`INSERT INTO %s.dependent_repositories
           (package_manager, namespace, name, version, owner_id, repository_id, license, source_url)
 	  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, keyspace)
-	(*drepos).Entries = append((*drepos).Entries, gocql.BatchEntry{
-		Stmt: drQuery,
-		Args: []interface{}{
-			mm.PackageManager,
-			dep.Namespace,
-			dep.Name,
-			dep.Version,
-			sm.OwnerID,
-			sm.RepositoryID,
-			dep.License,
-			dep.SourceURL},
-		Idempotent: true,
-	})
+	if err := client.Query(drQuery).Bind(
+		mm.PackageManager,
+		dep.Namespace,
+		dep.Name,
+		dep.Version,
+		sm.OwnerID,
+		sm.RepositoryID,
+		dep.License,
+		dep.SourceURL).Exec(); err != nil {
+		return fmt.Errorf("writing to dependent_repositories: %s", err)
+	}
 
 	countsQuery := fmt.Sprintf(`UPDATE %s.dependent_repository_counts SET used_by = used_by + 1
 	  WHERE package_manager = ? AND namespace = ? AND name = ? AND version = ?`, keyspace)
-	(*dcounts).Entries = append((*dcounts).Entries, gocql.BatchEntry{
-		Stmt: countsQuery,
-		Args: []interface{}{
-			mm.PackageManager,
-			dep.Namespace,
-			dep.Name,
-			dep.Version},
-		Idempotent: false,
-	})
-
-	return checkFlushBatches(ctx, client, mdeps, drepos, dcounts)
-}
-
-func checkFlushBatches(ctx context.Context, client *gocql.Session, mdeps, drepos, dcounts **gocql.Batch) error {
-	if (*mdeps).Size()%batchSize == 0 {
-		if err := client.ExecuteBatch(*mdeps); err != nil {
-			return fmt.Errorf("flushing manifest_dependencies entries: %s", err)
-		}
-		*mdeps = client.NewBatch(gocql.UnloggedBatch).WithContext(ctx)
-	}
-	if (*drepos).Size()%batchSize == 0 {
-		if err := client.ExecuteBatch(*drepos); err != nil {
-			return fmt.Errorf("flushing dependent_repositories entries: %s", err)
-		}
-		*drepos = client.NewBatch(gocql.UnloggedBatch).WithContext(ctx)
-	}
-	if (*dcounts).Size()%batchSize == 0 {
-		if err := client.ExecuteBatch(*dcounts); err != nil {
-			return fmt.Errorf("flushing dependent_repository_counts entries: %s", err)
-		}
-		*dcounts = client.NewBatch(gocql.CounterBatch).WithContext(ctx)
+	if err := client.Query(countsQuery).Bind(
+		mm.PackageManager,
+		dep.Namespace,
+		dep.Name,
+		dep.Version).Exec(); err != nil {
+		return fmt.Errorf("writing to dependent_repository_counts: %s", err)
 	}
 
 	return nil
