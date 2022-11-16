@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
 	Keyspace = "eli_demo"
 
-	batchSize = 250
+	maxWriteConcurrency = 8
+	batchSize           = 200
 )
 
 func CreateClient(ctx context.Context, lgr *log.Logger) (*gocql.Session, error) {
@@ -21,6 +23,7 @@ func CreateClient(ctx context.Context, lgr *log.Logger) (*gocql.Session, error) 
 	cfg.ProtoVersion = 3
 	cfg.ConnectTimeout = 2 * time.Second
 	cfg.Timeout = 10 * time.Second
+	cfg.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(gocql.RoundRobinHostPolicy())
 
 	return cfg.CreateSession()
 }
@@ -53,19 +56,34 @@ func Load(ctx context.Context, lgr *log.Logger, client *gocql.Session, snapshot 
 	}
 	lgr.Printf("Snapshot %s written", snapshot.ID)
 
-	for _, manifest := range snapshot.Manifests {
-		if err := writeManifest(ctx, lgr, client, keyspace, snapshot, manifest); err != nil {
-			return fmt.Errorf("writing manifest %s: %s", manifest.ID, err)
-		}
-		lgr.Printf("\tManifest %s written", manifest.ID)
-		total, err := batchDependencies(ctx, lgr, client, keyspace, snapshot, manifest)
-		if err != nil {
-			return fmt.Errorf("writing dependency batches for manifest %s: %s", manifest.ID, err)
-		}
-		lgr.Printf("\t\tTotal %d Dependencies written", total)
+	g, gctx := errgroup.WithContext(ctx)
+	tickets := make(chan struct{}, maxWriteConcurrency)
+	for i := 0; i < len(snapshot.Manifests); i++ {
+		manifest := snapshot.Manifests[i]
+
+		g.Go(func() error {
+			// return ticket when work is done
+			defer func() { <-tickets }()
+
+			// add a ticket before doing work (can block!)
+			tickets <- struct{}{}
+
+			if err := writeManifest(gctx, lgr, client, keyspace, snapshot, manifest); err != nil {
+				return fmt.Errorf("writing manifest %s: %s", manifest.ID, err)
+			}
+			lgr.Printf("\tManifest %s written", manifest.ID)
+
+			total, err := batchDependencies(gctx, lgr, client, keyspace, snapshot, manifest)
+			if err != nil {
+				return fmt.Errorf("writing dependency batches for manifest %s: %s", manifest.ID, err)
+			}
+			lgr.Printf("\t\tTotal %d Dependencies written", total)
+
+			return nil
+		})
 	}
 
-	return nil
+	return g.Wait()
 }
 
 func batchDependencies(ctx context.Context, lgr *log.Logger, client *gocql.Session, keyspace string, snapshot Snapshot, manifest Manifest) (uint, error) {
